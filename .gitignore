@@ -1,0 +1,14 @@
+# Game data is never committed - bring your own disc
+*.iso
+*.bin
+*.img
+*.DAT
+*.dat
+*.AFS
+*.afs
+*.PSS
+*.pss
+SLUS_*
+extract/
+build/
+out/
