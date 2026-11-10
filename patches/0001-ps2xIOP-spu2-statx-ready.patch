@@ -1,0 +1,19 @@
+diff --git a/ps2xIOP/src/emulator/core/iop_memory.cpp b/ps2xIOP/src/emulator/core/iop_memory.cpp
+index 25e9b36..c4ac675 100644
+--- a/ps2xIOP/src/emulator/core/iop_memory.cpp
++++ b/ps2xIOP/src/emulator/core/iop_memory.cpp
+@@ -213,6 +213,14 @@ namespace ps2x::iop::detail
+ 
+     uint32_t IopMemory::readHardware32(uint32_t address) const
+     {
++        // SPU2 STATX (core0 0x1F900344, core1 0x1F900744): bit 7 = DMA ready.
++        // The SPU2 is never busy here, so always report ready. LIBSD polls this
++        // for up to 0x1000000 iterations per transfer otherwise.
++        if (address == 0x1F900344u || address == 0x1F900744u)
++        {
++            const auto statx = m_hardware.find(address);
++            return (statx != m_hardware.end() ? statx->second : 0u) | 0x80u;
++        }
+         const auto value = m_hardware.find(address);
+         if (value != m_hardware.end())
+             return value->second;

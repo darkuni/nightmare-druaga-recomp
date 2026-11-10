@@ -72,3 +72,11 @@ Static-ctor table: 0x6A16D0-0x6A1AF0 (264 pointers into code B), run by the CRT 
 - Without the map the analyzer decodes the data region as code (6,958 errors). With `functions.csv`: **0 errors**, 8,024 recompiled, 215 stubs
 - 1,336 warnings, all unresolved JR/JALR (switch tables + function pointers) handled by runtime fallback lookup
 - Generated C++ (~149 MB) is derived from the game and is never committed
+3. Ctors + `main` run, all 12 IRX modules load on ps2xIOP (SIO2MAN ... CRI_ADXI). Stalls after `CRI ADX Driver : sceSdInit(SD_INIT_COLD)`.
+   - gdb: EE spinning in `sub_00423438` = `sceCdLayerSearchFile` (real libcdvd code waiting on cdvdfsv). The analyzer left it and its wrapper `sceCdSearchFile` (0x423738) unbound. CRI CVFS calls the layer version directly from 0x61C1CC.
+   - Fix: bind both addresses to the runtime `sceCdSearchFile` handler (config/druaga.toml)
+   - Side fix: `patches/0001-ps2xIOP-spu2-statx-ready.patch` - SPU2 STATX bit 7 always reads ready; LIBSD otherwise polls up to 16M iterations per transfer
+
+## Building
+
+PS2Recomp @ e563698 + `patches/*.patch`. GCC needs `-march=x86-64-v3` (SSE4.1 intrinsics in ps2_memory.cpp; MSVC doesn't care).

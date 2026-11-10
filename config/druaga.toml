@@ -21,6 +21,9 @@ patch_cache = true
 
 # Functions to stub (only names with runtime syscall/stub handlers)
 stubs = [
+  # druaga: libcdvd file lookup -> runtime handler (layer arg ignored)
+  "sceCdSearchFile@0x00423738",
+  "sceCdSearchFile@0x00423438",
   "sceGsResetGraph@0x004025F8",
   "sceGsResetPath@0x00402798",
   "sceGsSetDefDispEnv@0x004028B0",
@@ -550,7 +553,6 @@ entry_points = [
   "sceCdPOffCallback@0x004232E8",
   "_sceCd_Poff_Intr@0x00423368",
   "PowerOffCB@0x004233C0",
-  "sceCdLayerSearchFile@0x00423438",
   "_sceCd_ncmd_prechk@0x00423758",
   "_sceCd_scmd_prechk@0x00423A58",
   "_sceCdSC@0x00423BB0",
