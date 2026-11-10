@@ -97,6 +97,12 @@ PS2Recomp @ e563698 + `patches/*.patch`. GCC needs `-march=x86-64-v3` (SSE4.1 in
 7. Reaches `ADX WORK SIZE : 0x0004b1e4`, then main `SleepThread`s forever (inside 0x5652F0 loop, after CRI init).
    - CRI ADXM creates its 4 server threads (0x60F550/0x60F640/0x60F748/0x60F828) at main's *current* priority (read via `ReferThreadStatus(0)` -> 0x662458). Main is priority 0; the runtime's `CreateThread` and `ChangeThreadPriority` rejected 0 with KE_ILLEGAL_PRIORITY (-403). CRI stored -403 as its thread id and the VSync handler `iReferThreadStatus`/`iWakeupThread` never hit a real thread.
    - Fix (patch 0002): accept priority 0..127, like the EE kernel.
-8. **Current stop.** 5 EE threads up. After the first CRI SIF DMA (`sceSifSetDma` ra=0x61BE54, desc src=0x0 dst=0x1312C0 size=0x880) a CRI thread hits the error trap at 0x6257A8 (`if (!buf) for(;;);`), called through obj+0x20 from 0x61BD80 with buf = obj+0xC = NULL.
-   - Likely: a buffer address CRI expects from its IOP driver (CRI_ADXI.IRX, emulated in ps2xIOP) arrives as 0, i.e. the ADX EE<->IOP RPC/SIF-DMA path. Next: trace sceSifCallRpc/bind replies for the CRI_ADXI SID, or HLE CRI_ADXI.
-   - Screen: runtime's empty 640x448 frame (magenta), nothing presented yet; GS draw packets (sprite clears) are being processed.
+8. CRI ADX's EE<->IOP path (PS2RNA -> CRI_ADXI.IRX) handed back a NULL buffer and CRI trapped at 0x6257A8. ADXM's server handshake (priority juggling + Suspend/Resume, then WakeupThread) also never settled under the cooperative scheduler, so main slept forever in 0x610AB8.
+   - **Native CRI.** `runtime/DruagaAdx.cpp` (patch 0003) replaces the game's CRI surface:
+     - ADXT: `StartAfs` 0x615F20, `Stop` 0x614710, `GetStat` 0x6147D0, `SetOutVol` 0x615098. Decodes ADX straight from BGM.AFS (all 75 tracks: ADX v4, stereo, 48 kHz, unencrypted, highpass 500, 54 loop) and plays through raylib audio streams. Decoder output is bit-exact against a reference decoder, including the loop wrap.
+     - ADXF: `Open` 0x60DC98, `Seek` 0x60E690, `Tell` 0x60E7A8, `ReadNw` 0x60E370, `GetStat` 0x60E8F0, `LoadPartitionNw` 0x60D290, `GetPtStat` 0x60D6E8. Synchronous reads from the disc files.
+     - `ret0`: PS2RNA server 0x623408, ADXM exec 0x610970 / 0x610AB8.
+   - Game BGM API (for reference): play = `ADXT_StartAfs(handle[slot], ptid, table_0x64FBA0[idx])` via 0x565430; stop 0x565460; volume = 300*f - 300 (0.1 dB) via 0x565530; `ADXT_GetStat` polled for 4 handles at 0x565480.
+   - find_functions.py: `prologue_after_j` rule (prologue after an unconditional `j`/`b` + delay). 8,913 functions, 0 errors.
+9. **First frame.** DATA.DAT loads, SE bank goes to MTXSND ("setup SeSequence"), and the autosave notice renders (docs/img/first_frame.png). Pressing X (keyboard X = cross) passes it; the memory card check succeeds.
+10. **Current stop: intro movie NODA.PSS.** CD streaming, PSS demux and ES feed work, but the runtime was built with `PS2X_ENABLE_FFMPEG=OFF`, so no frames decode and the player waits. Next build: FFmpeg on.

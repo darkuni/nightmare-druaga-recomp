@@ -78,6 +78,21 @@ def main():
                 elif k > j:
                     add(base + k * 4, "padded")
 
+    # stack prologue straight after an unconditional tail jump (`j target` or `b`) + delay slot,
+    # e.g. ADXT_StartAfs at 0x615F20 follows a `j 0x612620` wrapper.
+    for lo, hi in CODE_REGIONS:
+        for i in range(idx(lo), idx(hi) - 2):
+            x = w[i]
+            is_j = x >> 26 == 2
+            is_b = (x >> 16) == 0x1000  # beq zero,zero
+            if not (is_j or is_b):
+                continue
+            k = i + 2
+            while k < idx(hi) and w[k] == 0:
+                k += 1
+            if k < idx(hi) and (w[k] >> 16) == 0x27BD and (w[k] & 0x8000):
+                add(base + k * 4, "prologue_after_j")
+
     # code B is only reached through pointers (static-ctor table at 0x6A16D0-0x6A1AF0)
     lo_b, hi_b = CODE_REGIONS[1]
     for i, x in enumerate(w):

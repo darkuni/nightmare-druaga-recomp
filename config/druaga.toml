@@ -24,6 +24,22 @@ stubs = [
   # druaga: libcdvd file lookup -> runtime handler (layer arg ignored)
   "sceCdSearchFile@0x00423738",
   "sceCdSearchFile@0x00423438",
+  # druaga: PS2RNA server (CRI ADX -> IOP transfer). IOP side of ADX is replaced natively.
+  "ret0@0x00623408",
+  # druaga: native CRI ADX/ADXF (runtime/DruagaAdx.cpp); ADXM exec calls are no-ops
+  "druagaAdxtStartAfs@0x00615F20",
+  "druagaAdxtStop@0x00614710",
+  "druagaAdxtGetStat@0x006147D0",
+  "druagaAdxtSetOutVol@0x00615098",
+  "druagaAdxfOpen@0x0060DC98",
+  "druagaAdxfSeek@0x0060E690",
+  "druagaAdxfTell@0x0060E7A8",
+  "druagaAdxfReadNw@0x0060E370",
+  "druagaAdxfGetStat@0x0060E8F0",
+  "druagaAdxfLoadPartitionNw@0x0060D290",
+  "druagaAdxfGetPtStat@0x0060D6E8",
+  "ret0@0x00610970",
+  "ret0@0x00610AB8",
   "sceGsResetGraph@0x004025F8",
   "sceGsResetPath@0x00402798",
   "sceGsSetDefDispEnv@0x004028B0",
