@@ -80,3 +80,8 @@ Static-ctor table: 0x6A16D0-0x6A1AF0 (264 pointers into code B), run by the CRT 
 ## Building
 
 PS2Recomp @ e563698 + `patches/*.patch`. GCC needs `-march=x86-64-v3` (SSE4.1 intrinsics in ps2_memory.cpp; MSVC doesn't care).
+
+4. After the CD fix: `\DATA.DAT;1` and `\BGM.AFS;1` resolve, first GIF chain goes out (`sceDmaSend` ch2, chain, TIE), then EE spins in `sub_0042BB70`, a DMA-queue drain (`while q[0x14] != q[0x18] sceDmaSync`).
+   - Queue class vtable at 0x6A1B98. Consumer is the DMAC handler 0x42C010 (registered via `AddDmacHandler` syscall 0x12, arg = queue), which advances q[0x18] and kicks the next `sceDmaSend`.
+   - Runtime traced: DMA-complete reaches `dispatchIrq(dmac, 2)` but the channel-2 enable bit is clear (mask 0xFFFFFFFB). The game brackets kicks with `DisableDmac(2)`/`EnableDmac(2)` and the runtime finishes the transfer synchronously inside that window, then drops the masked interrupt.
+   - Fix: `patches/0002-runtime-latch-masked-dmac-irq.patch` latches masked DMAC causes (like D_STAT) and delivers them on `EnableDmac`.
