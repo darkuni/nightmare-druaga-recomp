@@ -55,8 +55,16 @@ Top dirs: CHARACTER/WP 2405, CHARACTER/PT 1088, CHARACTER/TEST 416, MAP/DUNGEON 
 
 ## Function map
 
-`tools/find_functions.py` writes a PS2Recomp `ghidra_output` CSV: 8,239 functions
-(4,182 JAL targets, 2,695 prologues after `jr ra`, 1,359 nop-padded boundaries, entry, 2 region starts).
+`tools/find_functions.py` writes a PS2Recomp `ghidra_output` CSV: 8,323 functions
+(4,182 JAL targets, 2,695 prologues after `jr ra`, 1,359 nop-padded boundaries, 21 static-ctor
+table entries, 26 data pointers to prologues, 37 lui/addiu-built function pointers, entry, 2 region starts).
+
+Static-ctor table: 0x6A16D0-0x6A1AF0 (264 pointers into code B), run by the CRT before main.
+
+## Boot log
+
+1. ELF loads, kernel/CRT start, ctors at 0x689000/0x689040/0x6891E0 run, stops at 0x689200 (missed ctor) -> fixed with ctor-table rule
+2. All ctors pass, stops at 0x490B30 (callback built with lui/addiu, follows a tail branch) -> fixed with pointer rules
 
 ## PS2Recomp status (ran-j/PS2Recomp @ e563698)
 

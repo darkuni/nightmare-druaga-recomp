@@ -12,6 +12,9 @@ Function starts:
   - padded boundary: `jr ra` + delay slot, >=1 nop of padding, next non-nop word
     (CodeWarrior pads functions with nops; multi-return functions have no padding)
   - `addiu sp,sp,-N` straight after `jr ra` + delay slot
+  - any data word pointing into code B (static-ctor table)
+  - data words pointing at a stack prologue in code A (vtables / callback tables)
+  - addresses built in code with lui/addiu that land in code (function pointers)
 Function end = next start, clamped to its region.
 
 Output: PS2Recomp ghidra_output CSV  (name,start,end,size)
@@ -74,6 +77,41 @@ def main():
                     add(base + k * 4, "prologue")
                 elif k > j:
                     add(base + k * 4, "padded")
+
+    # code B is only reached through pointers (static-ctor table at 0x6A16D0-0x6A1AF0)
+    lo_b, hi_b = CODE_REGIONS[1]
+    for i, x in enumerate(w):
+        if region_of(base + i * 4) is None and lo_b <= x < hi_b:
+            add(x, "ctor_ptr")
+
+    def is_prologue(a):
+        x = w[idx(a)]
+        return (x >> 16) == 0x27BD and (x & 0x8000)
+
+    # data words pointing at a stack prologue in code A (vtables, callback tables).
+    # Prologue-only: switch-table case labels also live in data and must not split functions.
+    lo_a, hi_a = CODE_REGIONS[0]
+    for i, x in enumerate(w):
+        if region_of(base + i * 4) is None and lo_a <= x < hi_a and x % 4 == 0 and is_prologue(x):
+            add(x, "data_ptr")
+
+    # function pointers built in code: lui rX,hi ; addiu rY,rX,lo  (within 8 instructions)
+    for lo, hi in CODE_REGIONS:
+        for i in range(idx(lo), idx(hi)):
+            x = w[i]
+            if x >> 26 != 0x0F:
+                continue
+            rt = (x >> 16) & 31
+            upper = (x & 0xFFFF) << 16
+            for j in range(i + 1, min(i + 9, idx(hi))):
+                y = w[j]
+                if y >> 26 == 0x09 and (y >> 21) & 31 == rt:
+                    a = (upper + ((y & 0xFFFF) ^ 0x8000) - 0x8000) & 0xFFFFFFFF
+                    if region_of(a) and a % 4 == 0:
+                        add(a, "lui_ptr")
+                    break
+                if (y >> 16) & 31 == rt and y >> 26 in (0x0F, 0x08, 0x09, 0x0D, 0x23):
+                    break  # rt overwritten
 
     starts = sorted(src)
     rows = []
