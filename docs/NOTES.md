@@ -84,7 +84,7 @@ PS2Recomp @ e563698 + `patches/*.patch`. GCC needs `-march=x86-64-v3` (SSE4.1 in
 4. After the CD fix: `\DATA.DAT;1` and `\BGM.AFS;1` resolve, first GIF chain goes out (`sceDmaSend` ch2, chain, TIE), then EE spins in `sub_0042BB70`, a DMA-queue drain (`while q[0x14] != q[0x18] sceDmaSync`).
    - Queue class vtable at 0x6A1B98. Consumer is the DMAC handler 0x42C010 (registered via `AddDmacHandler` syscall 0x12, arg = queue), which advances q[0x18] and kicks the next `sceDmaSend`.
    - Runtime traced: DMA-complete reaches `dispatchIrq(dmac, 2)` but the channel-2 enable bit is clear (mask 0xFFFFFFFB). The game brackets kicks with `DisableDmac(2)`/`EnableDmac(2)` and the runtime finishes the transfer synchronously inside that window, then drops the masked interrupt.
-   - Fix: `patches/0002-runtime-dmac-latch-and-callback-stacks.patch` latches masked DMAC causes (like D_STAT) and delivers them on `EnableDmac`.
+   - Fix: `patches/0002-runtime-dmac-latch-callback-stacks-priority0.patch` latches masked DMAC causes (like D_STAT) and delivers them on `EnableDmac`.
 5. GIF + VIF1 queues drain (VU1 microcode upload from 0x62F600). Pad init runs (60-frame waits), then the main thread jumps to 0.
    - Cause: runtime interrupt/callback stacks are carved down from 0x2000000, and this game's `SetupThread(gp, 0x1FE0000, 0x20000)` puts the main stack right there. Callback frames overwrote `main`'s saved `ra` (main = 0x427C70, frame at 0x1FFFF70).
    - Fix (same patch 0002): `invocationStackTop()` skips carve-outs that overlap any guest thread stack (now 0x1FDFFF0).
@@ -94,3 +94,9 @@ PS2Recomp @ e563698 + `patches/*.patch`. GCC needs `-march=x86-64-v3` (SSE4.1 in
 ## Debug switches (local runtime build only, not in patches)
 
 `DRUAGA_SCHED_TRACE`, `DRUAGA_SYSCALL_TRACE`, and `PS2X_ENABLE_AGRESSIVE_LOGS=ON` (writes ps2_log.txt call trace). Run with `stdbuf -o0` or stdout is lost on kill.
+7. Reaches `ADX WORK SIZE : 0x0004b1e4`, then main `SleepThread`s forever (inside 0x5652F0 loop, after CRI init).
+   - CRI ADXM creates its 4 server threads (0x60F550/0x60F640/0x60F748/0x60F828) at main's *current* priority (read via `ReferThreadStatus(0)` -> 0x662458). Main is priority 0; the runtime's `CreateThread` and `ChangeThreadPriority` rejected 0 with KE_ILLEGAL_PRIORITY (-403). CRI stored -403 as its thread id and the VSync handler `iReferThreadStatus`/`iWakeupThread` never hit a real thread.
+   - Fix (patch 0002): accept priority 0..127, like the EE kernel.
+8. **Current stop.** 5 EE threads up. After the first CRI SIF DMA (`sceSifSetDma` ra=0x61BE54, desc src=0x0 dst=0x1312C0 size=0x880) a CRI thread hits the error trap at 0x6257A8 (`if (!buf) for(;;);`), called through obj+0x20 from 0x61BD80 with buf = obj+0xC = NULL.
+   - Likely: a buffer address CRI expects from its IOP driver (CRI_ADXI.IRX, emulated in ps2xIOP) arrives as 0, i.e. the ADX EE<->IOP RPC/SIF-DMA path. Next: trace sceSifCallRpc/bind replies for the CRI_ADXI SID, or HLE CRI_ADXI.
+   - Screen: runtime's empty 640x448 frame (magenta), nothing presented yet; GS draw packets (sprite clears) are being processed.
