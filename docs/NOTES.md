@@ -43,3 +43,11 @@ Top dirs: CHARACTER/WP 2405, CHARACTER/PT 1088, CHARACTER/TEST 416, MAP/DUNGEON 
 4. VU1: two microprograms only - small enough to hand-translate or interpret
 5. Replace CRI ADX/AFS + PSS playback with native decoders
 6. Windows + Linux (SteamOS) builds via CI
+
+## Function map (heuristic)
+
+`tools/find_functions.py` gives 7,314 starts (5,758 JAL targets, 1,555 post-`jr ra` prologues, entry).
+Code region 0x400000-0x6A16C4 is not contiguous. Known non-code islands to exclude:
+- 0x62F430-0x635B70: VU1 microcode block (MPG payloads)
+- 0x636C88-0x6892B0: ~330 KB data island (code resumes after it)
+Ghidra + ExportPS2Functions.java should replace this map.
