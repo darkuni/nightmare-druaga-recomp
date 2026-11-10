@@ -44,10 +44,23 @@ Top dirs: CHARACTER/WP 2405, CHARACTER/PT 1088, CHARACTER/TEST 416, MAP/DUNGEON 
 5. Replace CRI ADX/AFS + PSS playback with native decoders
 6. Windows + Linux (SteamOS) builds via CI
 
-## Function map (heuristic)
+## Memory layout (single PT_LOAD)
 
-`tools/find_functions.py` gives 7,314 starts (5,758 JAL targets, 1,555 post-`jr ra` prologues, entry).
-Code region 0x400000-0x6A16C4 is not contiguous. Known non-code islands to exclude:
-- 0x62F430-0x635B70: VU1 microcode block (MPG payloads)
-- 0x636C88-0x6892B0: ~330 KB data island (code resumes after it)
-Ghidra + ExportPS2Functions.java should replace this map.
+| Range | Contents |
+|---|---|
+| 0x400000-0x62F540 | code A (game, SDK, CRI) |
+| 0x62F540-0x689000 | data: VU1 microcode (MPG at 0x62FF0C / 0x633C0C), rodata, jump tables (e.g. 0x688E60) |
+| 0x689000-0x6A16C4 | code B: static initializers, only reached through a pointer table |
+| 0x6A16C4-0x6A6880 | data |
+
+## Function map
+
+`tools/find_functions.py` writes a PS2Recomp `ghidra_output` CSV: 8,239 functions
+(4,182 JAL targets, 2,695 prologues after `jr ra`, 1,359 nop-padded boundaries, entry, 2 region starts).
+
+## PS2Recomp status (ran-j/PS2Recomp @ e563698)
+
+- `ps2_analyzer` -> `config/druaga.toml`: 215 SDK functions bound to runtime handlers, 346 library functions detected without handlers, 3 jump tables, MMIO map
+- Without the map the analyzer decodes the data region as code (6,958 errors). With `functions.csv`: **0 errors**, 8,024 recompiled, 215 stubs
+- 1,336 warnings, all unresolved JR/JALR (switch tables + function pointers) handled by runtime fallback lookup
+- Generated C++ (~149 MB) is derived from the game and is never committed
