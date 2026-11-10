@@ -84,4 +84,13 @@ PS2Recomp @ e563698 + `patches/*.patch`. GCC needs `-march=x86-64-v3` (SSE4.1 in
 4. After the CD fix: `\DATA.DAT;1` and `\BGM.AFS;1` resolve, first GIF chain goes out (`sceDmaSend` ch2, chain, TIE), then EE spins in `sub_0042BB70`, a DMA-queue drain (`while q[0x14] != q[0x18] sceDmaSync`).
    - Queue class vtable at 0x6A1B98. Consumer is the DMAC handler 0x42C010 (registered via `AddDmacHandler` syscall 0x12, arg = queue), which advances q[0x18] and kicks the next `sceDmaSend`.
    - Runtime traced: DMA-complete reaches `dispatchIrq(dmac, 2)` but the channel-2 enable bit is clear (mask 0xFFFFFFFB). The game brackets kicks with `DisableDmac(2)`/`EnableDmac(2)` and the runtime finishes the transfer synchronously inside that window, then drops the masked interrupt.
-   - Fix: `patches/0002-runtime-latch-masked-dmac-irq.patch` latches masked DMAC causes (like D_STAT) and delivers them on `EnableDmac`.
+   - Fix: `patches/0002-runtime-dmac-latch-and-callback-stacks.patch` latches masked DMAC causes (like D_STAT) and delivers them on `EnableDmac`.
+5. GIF + VIF1 queues drain (VU1 microcode upload from 0x62F600). Pad init runs (60-frame waits), then the main thread jumps to 0.
+   - Cause: runtime interrupt/callback stacks are carved down from 0x2000000, and this game's `SetupThread(gp, 0x1FE0000, 0x20000)` puts the main stack right there. Callback frames overwrote `main`'s saved `ra` (main = 0x427C70, frame at 0x1FFFF70).
+   - Fix (same patch 0002): `invocationStackTop()` skips carve-outs that overlap any guest thread stack (now 0x1FDFFF0).
+6. Gets through `INIT GS` and `INIT ENVIRONMENT`, MTXSND starts its sequencer thread. Missing function 0x61C388: frameless CRI leaf reached only via a function table at 0x665740.
+   - Fix: `data_leaf` rule in find_functions.py (data pointers landing right after `jr ra`+delay or padding; runs clustered in <0x800 that are mostly unknown targets are treated as switch tables and skipped). 8,793 functions; none of the analyzer's 72 jump-table targets became starts.
+
+## Debug switches (local runtime build only, not in patches)
+
+`DRUAGA_SCHED_TRACE`, `DRUAGA_SYSCALL_TRACE`, and `PS2X_ENABLE_AGRESSIVE_LOGS=ON` (writes ps2_log.txt call trace). Run with `stdbuf -o0` or stdout is lost on kill.

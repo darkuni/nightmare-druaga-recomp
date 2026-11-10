@@ -95,6 +95,32 @@ def main():
         if region_of(base + i * 4) is None and lo_a <= x < hi_a and x % 4 == 0 and is_prologue(x):
             add(x, "data_ptr")
 
+    # data words pointing at a frameless leaf that starts right after `jr ra` + delay slot
+    # (or after nop padding), e.g. CRI callback tables. Skip jump-table-like runs:
+    # >=3 consecutive pointers clustered within 0x800 bytes, mostly not known starts.
+    in_jt = set()
+    i = 0
+    n = len(w)
+    while i < n:
+        j = i
+        while j < n and region_of(base + j * 4) is None and lo_a <= w[j] < hi_a and w[j] % 4 == 0:
+            j += 1
+        if j - i >= 3:
+            run = w[i:j]
+            known = sum(1 for t in run if t in src)
+            # jump table: targets cluster inside one function and are mostly not known starts.
+            # function table (e.g. CRI callbacks at 0x665740): mostly known starts.
+            if max(run) - min(run) < 0x800 and known * 2 < len(run):
+                in_jt.update(range(i, j))
+        i = j + 1 if j == i else j
+    for i, x in enumerate(w):
+        if i in in_jt or region_of(base + i * 4) is not None:
+            continue
+        if lo_a <= x < hi_a and x % 4 == 0:
+            k = idx(x)
+            if w[k - 2] == JR_RA or (w[k - 1] == 0 and w[k] != 0):
+                add(x, "data_leaf")
+
     # function pointers built in code: lui rX,hi ; addiu rY,rX,lo  (within 8 instructions)
     for lo, hi in CODE_REGIONS:
         for i in range(idx(lo), idx(hi)):

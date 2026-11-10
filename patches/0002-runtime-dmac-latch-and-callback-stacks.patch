@@ -10,8 +10,6 @@ index f247ff9..ecbeb0b 100644
      int m_currentThreadId = 0;
      bool m_rescheduleRequested = false;
      bool m_timeSliceExpired = false;
-diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
-index c5e31c4..8b55ed4 100644
 --- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
 +++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
 @@ -1,3 +1,5 @@
@@ -20,7 +18,7 @@ index c5e31c4..8b55ed4 100644
  #include "runtime/ee_scheduler.h"
  
  #include "ps2_log.h"
-@@ -106,6 +108,7 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
+@@ -106,6 +108,7 @@
      m_dmacTailOrder = 1000;
      m_enabledIntcMask = 0xFFFFFFFFu;
      m_enabledDmacMask = 0xFFFFFFFFu;
@@ -28,7 +26,41 @@ index c5e31c4..8b55ed4 100644
      m_currentThreadId = 0;
      m_rescheduleRequested = false;
      m_timeSliceExpired = false;
-@@ -1243,6 +1246,11 @@ int EeScheduler::setIrqCauseEnabled(bool dmac, uint32_t cause, bool enabled)
+@@ -1171,7 +1174,32 @@
+         return existing->second;
+     }
+     constexpr uint32_t kInvocationStackSize = 0x4000u;
+-    const uint32_t top = m_runtime.reserveAsyncCallbackStack(kInvocationStackSize, 16u);
++    // Callback stacks are carved down from the top of RAM. Games that SetupThread
++    // their main stack at the top of RAM (e.g. 0x1FE0000+0x20000) would get their
++    // saved registers overwritten by interrupt/callback frames, so skip any
++    // region that overlaps a guest thread stack.
++    auto overlapsThreadStack = [this](uint32_t top) {
++        const uint32_t lo = top + 0x10u - kInvocationStackSize;
++        const uint32_t hi = top + 0x10u;
++        for (const auto &[tid, t] : m_threads)
++        {
++            (void)tid;
++            if (t.stackSize == 0u || t.stack == 0u)
++                continue;
++            const uint32_t sLo = t.stack & 0x1FFFFFFFu;
++            const uint32_t sHi = sLo + t.stackSize;
++            if (lo < sHi && sLo < hi)
++                return true;
++        }
++        return false;
++    };
++    uint32_t top = 0u;
++    for (int attempt = 0; attempt < 256; ++attempt)
++    {
++        top = m_runtime.reserveAsyncCallbackStack(kInvocationStackSize, 16u);
++        if (top == 0u || !overlapsThreadStack(top))
++            break;
++    }
+     if (top == 0u)
+     {
+         throw std::runtime_error("EE invocation stack space exhausted");
+@@ -1243,6 +1271,11 @@
          if (enabled)
          {
              mask |= 1u << cause;
@@ -40,7 +72,7 @@ index c5e31c4..8b55ed4 100644
          }
          else
          {
-@@ -1258,6 +1266,13 @@ void EeScheduler::dispatchIrq(bool dmac, uint32_t cause)
+@@ -1258,6 +1291,13 @@
      const uint32_t mask = dmac ? m_enabledDmacMask : m_enabledIntcMask;
      if (cause < 32u && (mask & (1u << cause)) == 0u)
      {
