@@ -1,0 +1,99 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index 44eaef4..ce98926 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -486,6 +486,7 @@ namespace ps2_stubs
+ 
+         struct MpegPlaybackState
+         {
++            bool nodataInFlight = false;
+             uint32_t picturesServed = 0u;
+             uint32_t width = 320u;
+             uint32_t height = 240u;
+@@ -1620,6 +1621,14 @@ namespace ps2_stubs
+             runtime->eeScheduler().queueInvocation(std::move(invocation));
+         }
+ 
++
++        // libmpeg pulls data from inside sceMpegGetPicture through the game's
++        // sceMpegCbNodata (type 1) callback. Games that read + demux only from that
++        // callback (no separate feeder thread) would otherwise wait forever once the
++        // decoded queue drains. Queue the callbacks as guest calls; when one finishes,
++        // wake the waiting GetPicture so it retries. A callback returning 0 means "no
++        // more data", so the stream is marked ended.
++        void queueNodataCallbacks(uint8_t *rdram, R5900Context *callerCtx, PS2Runtime *runtime, uint32_t mpegAddr);
+         void dispatchStreamCallbacks(uint8_t *rdram,
+                                      R5900Context *ctx,
+                                      PS2Runtime *runtime,
+@@ -1639,6 +1648,63 @@ namespace ps2_stubs
+             }
+         }
+ 
++
++        void queueNodataCallbacks(uint8_t *rdram, R5900Context *callerCtx, PS2Runtime *runtime, uint32_t mpegAddr)
++        {
++            constexpr uint32_t kMpegCbNodata = 1u;
++            std::vector<MpegRegisteredCallback> nodata;
++            {
++                std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
++                auto it = g_mpeg_stub_state.callbacksByMpeg.find(mpegAddr);
++                if (it != g_mpeg_stub_state.callbacksByMpeg.end())
++                    for (const MpegRegisteredCallback &cb : it->second)
++                        if (!cb.stream && cb.type == kMpegCbNodata)
++                            nodata.push_back(cb);
++                MpegPlaybackState &playback = getPlaybackState(mpegAddr);
++                if (nodata.empty() || playback.nodataInFlight)
++                    return;
++                playback.nodataInFlight = true;
++            }
++            for (const MpegRegisteredCallback &callback : nodata)
++            {
++                if (callback.func == 0u || !runtime->hasFunction(callback.func))
++                    continue;
++                const uint32_t cbDataAddr = runtime->guestMalloc(kMpegCallbackDataSize, 16u);
++                if (cbDataAddr == 0u)
++                    continue;
++                if (uint8_t *p = getMemPtr(rdram, cbDataAddr))
++                {
++                    std::memset(p, 0, kMpegCallbackDataSize);
++                    std::memcpy(p, &kMpegCbNodata, sizeof(kMpegCbNodata));
++                }
++                R5900Context callbackCtx = *callerCtx;
++                SET_GPR_U32(&callbackCtx, 4, mpegAddr);
++                SET_GPR_U32(&callbackCtx, 5, cbDataAddr);
++                SET_GPR_U32(&callbackCtx, 6, callback.data);
++                SET_GPR_U32(&callbackCtx, 7, 0u);
++                SET_GPR_U32(&callbackCtx, 29, 0u);
++                SET_GPR_U32(&callbackCtx, 31, 0u);
++                callbackCtx.pc = callback.func;
++                GuestInvocation invocation{};
++                invocation.kind = GuestInvocationKind::RpcCallback;
++                invocation.context = callbackCtx;
++                invocation.onComplete = [runtime, cbDataAddr, mpegAddr](const R5900Context &done, R5900Context &)
++                {
++                    runtime->guestFree(cbDataAddr);
++                    {
++                        std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
++                        MpegPlaybackState &playback = getPlaybackState(mpegAddr);
++                        playback.nodataInFlight = false;
++                        if (static_cast<int32_t>(getRegU32(const_cast<R5900Context *>(&done), 2)) == 0 &&
++                            playback.decodedFrames.empty())
++                            playback.streamEnded = true;
++                    }
++                    runtime->eeScheduler().completeExternalWait(kMpegPictureWaitType, mpegAddr, KE_OK);
++                };
++                runtime->eeScheduler().queueInvocation(std::move(invocation));
++            }
++        }
++
+         void dispatchStreamCallbacksUnlocked(uint8_t *rdram,
+                                              R5900Context *ctx,
+                                              PS2Runtime *runtime,
+@@ -2308,6 +2374,7 @@ namespace ps2_stubs
+                     ++g_mpeg_stub_state.getPictureWaitTraceCount;
+                 }
+                 lock.unlock();
++                queueNodataCallbacks(rdram, ctx, runtime, mpegAddr);
+                 runtime->eeScheduler().waitExternal(
+                     EeWaitReason::Mpeg,
+                     kMpegPictureWaitType,

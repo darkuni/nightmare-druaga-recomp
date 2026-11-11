@@ -105,4 +105,11 @@ PS2Recomp @ e563698 + `patches/*.patch`. GCC needs `-march=x86-64-v3` (SSE4.1 in
    - Game BGM API (for reference): play = `ADXT_StartAfs(handle[slot], ptid, table_0x64FBA0[idx])` via 0x565430; stop 0x565460; volume = 300*f - 300 (0.1 dB) via 0x565530; `ADXT_GetStat` polled for 4 handles at 0x565480.
    - find_functions.py: `prologue_after_j` rule (prologue after an unconditional `j`/`b` + delay). 8,913 functions, 0 errors.
 9. **First frame.** DATA.DAT loads, SE bank goes to MTXSND ("setup SeSequence"), and the autosave notice renders (docs/img/first_frame.png). Pressing X (keyboard X = cross) passes it; the memory card check succeeds.
-10. **Current stop: intro movie NODA.PSS.** CD streaming, PSS demux and ES feed work, but the runtime was built with `PS2X_ENABLE_FFMPEG=OFF`, so no frames decode and the player waits. Next build: FFmpeg on.
+10. Intro movie NODA.PSS: runtime needs `PS2X_ENABLE_FFMPEG=ON` (Linux: libavcodec/libavformat/libswscale/libswresample dev packages; Windows: the runtime fetches a prebuilt FFmpeg). Then it decoded 8 frames and deadlocked: this game reads + demuxes only from its `sceMpegCbNodata` callback (0x5E82F0, called from inside `sceMpegGetPicture`), with no separate feeder thread.
+    - Fix: `patches/0004-runtime-mpeg-nodata-callback.patch`. When `GetPicture` runs dry it queues the game's Nodata callbacks as guest calls, wakes itself when one finishes, and marks the stream ended if a callback returns 0.
+    - Movie plays (docs/img/intro_movie.png). Start skips it.
+11. **Title screen** (docs/img/title_screen.png). `ADXT_StartAfs(ptid=1, fid=1)` goes through the native ADX player for the title BGM. Idle on the title loops back to the attract movie.
+
+## Input (runtime keyboard map)
+
+Arrows = D-pad, X = cross, C = circle, Z = square, V = triangle, Enter = Start, Q/E = L1/R1, 1/3 = L2/R2.
