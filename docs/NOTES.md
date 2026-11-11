@@ -110,6 +110,9 @@ PS2Recomp @ e563698 + `patches/*.patch`. GCC needs `-march=x86-64-v3` (SSE4.1 in
     - Movie plays (docs/img/intro_movie.png). Start skips it.
 11. **Title screen** (docs/img/title_screen.png). `ADXT_StartAfs(ptid=1, fid=1)` goes through the native ADX player for the title BGM. Idle on the title loops back to the attract movie.
 
+12. **Game Menu** (docs/img/game_menu.png): Start on the title -> Game Menu (New Game / Config); menu BGM switches (fid 64, then fid 2) through the native player.
+13. **Current stop: New Game -> "Saving data..."**. Memory card log: `sceMcDelete` (cmd 15) on the save path returns -4 (no entry, expected on a fresh card), then the game polls `sceMcGetInfo` + `sceMcSync` every frame (975 rounds) and never issues Mkdir/Open/Write. Game MC code: Sync wrapper 0x5D0230 (dispatches on finished cmd via jump table at 0x681250), Delete site 0x5D1500, result mapper 0x5D1530, Mkdir caller 0x5D1238, Open callers 0x5D0A60/0x5D0B48/0x5D0E48, GetInfo callers 0x5D04A0/0x5D076C.
+
 ## Input (runtime keyboard map)
 
 Arrows = D-pad, X = cross, C = circle, Z = square, V = triangle, Enter = Start, Q/E = L1/R1, 1/3 = L2/R2.
